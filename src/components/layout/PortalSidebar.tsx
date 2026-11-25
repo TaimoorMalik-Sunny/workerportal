@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   Users,
+  Cpu,
 } from 'lucide-react';
 import { useAppStore } from '@/store/use-app-store';
 import { ROLE_PROFILES } from '@/config/roles';
@@ -149,6 +150,15 @@ export function PortalSidebar({ metrics }: PortalSidebarProps) {
                 <span className="font-orbitron rounded-full bg-[#fcbb00]/20 px-2 py-0.5 text-[10px] font-bold text-[#f05100] tabular-nums">
                   3
                 </span>
+              </Link>
+              <Link
+                href="/dashboard/manager?tab=circulation"
+                className="flex items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-[#000000] transition-all hover:bg-[#f8fafc]"
+              >
+                <div className="flex items-center gap-3">
+                  <Cpu className="size-4 shrink-0 text-[#13c2b6]" />
+                  <span>Queue Circulation</span>
+                </div>
               </Link>
             </div>
           )}

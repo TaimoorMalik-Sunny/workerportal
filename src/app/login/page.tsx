@@ -5,9 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ShieldCheck,
   Lock,
-  User,
-  Eye,
-  EyeOff,
   ArrowRight,
   AlertCircle,
   Loader2,
@@ -28,11 +25,10 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
-  loginWorker,
   changeWorkerPassword,
   mapRoleSlugToWorkflowRole,
+  initiateWorkerKeycloakLogin,
 } from '@/services/auth';
 import { useAppStore } from '@/store/use-app-store';
 
@@ -43,10 +39,6 @@ function WorkerLoginForm() {
 
   const { setActiveRole } = useAppStore();
 
-  const [username, setUsername] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [showPassword, setShowPassword] = React.useState(false);
-
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(
@@ -56,66 +48,28 @@ function WorkerLoginForm() {
   // First-time password update states
   const [showPasswordChangeModal, setShowPasswordChangeModal] =
     React.useState(false);
-  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [currentPassword, _setCurrentPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [pendingToken, setPendingToken] = React.useState<string | undefined>(
+  const [pendingToken, _setPendingToken] = React.useState<string | undefined>(
     undefined
   );
-  const [pendingRoles, setPendingRoles] = React.useState<string[]>([]);
+  const [pendingRoles, _setPendingRoles] = React.useState<string[]>([]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username.trim() || !password) {
-      setErrorMessage('Please enter both your official ID/email and password.');
-      return;
-    }
-
+  const handleKeycloakRedirect = async () => {
     setIsLoading(true);
     setErrorMessage(null);
-    setSuccessMessage(null);
-
     try {
-      const res = await loginWorker(username.trim(), password);
-
-      if (!res.success || !res.data) {
-        setErrorMessage(
-          res.message ||
-            res.error ||
-            'Authentication failed. Please verify your credentials.'
-        );
-        setIsLoading(false);
-        return;
-      }
-
-      const { user, token } = res.data;
-      const roles = user.roles || [];
-
-      // Check if password change is required
-      if (res.password_change_required) {
-        setPendingToken(token?.access_token);
-        setPendingRoles(roles);
-        setCurrentPassword(password);
-        setShowPasswordChangeModal(true);
-        setIsLoading(false);
-        return;
-      }
-
-      // Successful login
-      setSuccessMessage(
-        'Authentication successful! Loading your operational workspace...'
-      );
-      const { roleType, targetPath } = mapRoleSlugToWorkflowRole(roles);
-      setActiveRole(roleType);
-
-      setTimeout(() => {
-        router.push(callbackUrl || targetPath);
-        router.refresh();
-      }, 700);
+      await initiateWorkerKeycloakLogin({
+        callbackUrl: callbackUrl || undefined,
+      });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Network error';
-      setErrorMessage(`Unable to reach authentication gateway: ${msg}`);
       setIsLoading(false);
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Unable to connect to Keycloak IAM.'
+      );
     }
   };
 
@@ -166,10 +120,8 @@ function WorkerLoginForm() {
     }
   };
 
-  const setQuickAccount = (email: string) => {
-    setUsername(email);
-    setPassword('TestPassword123!');
-    setErrorMessage(null);
+  const setQuickAccount = (_email: string) => {
+    handleKeycloakRedirect();
   };
 
   return (
@@ -229,80 +181,39 @@ function WorkerLoginForm() {
 
             {/* Login Form */}
             {!showPasswordChangeModal ? (
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="username"
-                    className="text-xs font-semibold text-slate-700"
-                  >
-                    Official Email / Officer ID
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute top-2.5 left-2.5 h-4 w-4 text-slate-400" />
-                    <Input
-                      id="username"
-                      type="text"
-                      placeholder="e.g. scrutiny1@test.com"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="pl-8 text-sm"
-                      autoComplete="username"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="password"
-                    className="text-xs font-semibold text-slate-700"
-                  >
-                    Password
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute top-2.5 left-2.5 h-4 w-4 text-slate-400" />
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-8 pl-8 text-sm"
-                      autoComplete="current-password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute top-2.5 right-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-[#173e81]/20 bg-slate-50 p-3.5 text-xs text-slate-700">
+                  <p className="font-semibold text-[#173e81]">
+                    Keycloak IAM SSO Authentication
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                    Worker authentication is centralized via HEC Keycloak. Click
+                    below to sign in using your official credentials. After
+                    authentication, you will be redirected back to your
+                    operational workspace.
+                  </p>
                 </div>
 
                 <Button
-                  type="submit"
+                  type="button"
+                  onClick={handleKeycloakRedirect}
                   disabled={isLoading}
-                  className="w-full bg-[#173e81] text-white hover:bg-[#0d2a55]"
+                  className="flex h-12 w-full items-center justify-center gap-2.5 bg-[#173e81] text-sm font-semibold text-white shadow-md transition-all hover:bg-[#0d2a55]"
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Authenticating with Keycloak...
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin text-amber-400" />
+                      <span>Redirecting to Keycloak Login...</span>
                     </>
                   ) : (
                     <>
-                      Access Officer Workspace
-                      <ArrowRight className="ml-2 h-4 w-4" />
+                      <ShieldCheck className="h-5 w-5 text-amber-400" />
+                      <span>Sign In with Keycloak IAM</span>
+                      <ArrowRight className="ml-auto h-4 w-4" />
                     </>
                   )}
                 </Button>
-              </form>
+              </div>
             ) : (
               /* Password Change Form on First Login */
               <form onSubmit={handlePasswordChange} className="space-y-4">

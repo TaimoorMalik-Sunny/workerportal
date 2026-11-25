@@ -333,3 +333,43 @@ export interface LeaveAndDelegationKpis {
   staffCurrentlyOnLeave: number;
   unassignedAtRiskTasks: number;
 }
+
+export interface UnassignedQueues {
+  scrutiny: number;
+  controller_l1: number;
+  controller_l2: number;
+  attestation: number;
+  total_unassigned: number;
+}
+
+export interface UniversityWithControllers {
+  id: string;
+  name: string;
+  short_code: string;
+  controllers_count: number;
+  controllers: Array<{
+    id: number;
+    name: string;
+    email: string;
+    isOnLeave: boolean;
+  }>;
+}
+
+export interface CirculationAssignment {
+  application_id: string;
+  assigned_to_user_id: number;
+  assigned_to_user_name: string;
+  assigned_to_email: string;
+  assigned_role: string;
+  university_id?: string | null;
+  assigned_at: string;
+}
+
+export interface CirculationExecutionResult {
+  success: boolean;
+  message: string;
+  strategy?: string;
+  role_scope?: string;
+  distributed_count: number;
+  assignments: CirculationAssignment[];
+}

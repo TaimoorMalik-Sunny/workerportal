@@ -8,6 +8,7 @@ import {
   Users,
   ArrowRightLeft,
   RefreshCw,
+  Cpu,
 } from 'lucide-react';
 import { PortalHeader } from '@/components/layout/PortalHeader';
 import { PortalSidebar } from '@/components/layout/PortalSidebar';
@@ -20,6 +21,7 @@ import { StaffLeaveTable } from '@/components/manager/StaffLeaveTable';
 import { ActiveDelegationsTable } from '@/components/manager/ActiveDelegationsTable';
 import { TaskDelegationDrawer } from '@/components/manager/TaskDelegationDrawer';
 import { ManagerOverviewCards } from '@/components/manager/ManagerOverviewCards';
+import { ManagerCirculationView } from '@/components/manager/ManagerCirculationView';
 import { useAppStore } from '@/store/use-app-store';
 import {
   DashboardMetrics,
@@ -41,8 +43,12 @@ function ManagerWorkspaceContent() {
   const { setActiveRole } = useAppStore();
 
   // Primary tab state directly derived from URL query param
-  const activeTab =
-    urlTab === 'leave-delegation' ? 'leave-delegation' : 'overview';
+  const activeTab: 'overview' | 'leave-delegation' | 'circulation' =
+    urlTab === 'leave-delegation'
+      ? 'leave-delegation'
+      : urlTab === 'circulation'
+        ? 'circulation'
+        : 'overview';
 
   // Sub-tab state under 'leave-delegation': 'leaves' | 'delegations'
   const [subTab, setSubTab] = React.useState<'leaves' | 'delegations'>(
@@ -127,7 +133,9 @@ function ManagerWorkspaceContent() {
     };
   }, []);
 
-  const handleSwitchTab = (tab: 'overview' | 'leave-delegation') => {
+  const handleSwitchTab = (
+    tab: 'overview' | 'leave-delegation' | 'circulation'
+  ) => {
     router.replace(`/dashboard/manager?tab=${tab}`);
   };
 
@@ -224,6 +232,21 @@ function ManagerWorkspaceContent() {
                 >
                   {leaveKpis?.pendingLeaveRequests ?? 3}
                 </Badge>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSwitchTab('circulation')}
+                className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+                  activeTab === 'circulation'
+                    ? 'bg-[#13c2b6] text-white shadow-2xs'
+                    : 'border border-transparent text-slate-600 hover:border-[#e5e5e5] hover:bg-slate-50'
+                }`}
+              >
+                <Cpu className="size-4" />
+                <span className="font-orbitron">
+                  Queue Circulation & Balancing
+                </span>
               </button>
             </div>
 
@@ -377,6 +400,13 @@ function ManagerWorkspaceContent() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* =========================================================================
+              VIEW 3: DYNAMIC APPLICATION CIRCULATION & WORKLOAD BALANCING
+             ========================================================================= */}
+          {activeTab === 'circulation' && (
+            <ManagerCirculationView onRefreshParent={loadAllData} />
           )}
 
           {/* Respective Task Delegation Drawer / Modal */}

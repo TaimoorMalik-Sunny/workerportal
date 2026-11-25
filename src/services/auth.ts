@@ -231,6 +231,177 @@ export async function logoutWorker() {
     localStorage.removeItem('hec_worker_token');
     clearClientCookie('hec_worker_token');
     clearClientCookie('hec_auth_token');
-    window.location.href = '/login';
+    window.location.assign('/login');
   }
+}
+
+/**
+ * Generates random base64url string for PKCE code_verifier.
+ */
+export function generateRandomString(length = 64): string {
+  const charset =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  if (
+    typeof window !== 'undefined' &&
+    window.crypto &&
+    window.crypto.getRandomValues
+  ) {
+    const values = new Uint8Array(length);
+    window.crypto.getRandomValues(values);
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += charset[values[i] % charset.length];
+    }
+    return result;
+  }
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return result;
+}
+
+/**
+ * Calculates SHA-256 base64url hash for PKCE code_challenge.
+ */
+export async function generateCodeChallenge(verifier: string): Promise<string> {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const hash = await window.crypto.subtle.digest('SHA-256', data);
+    const bytes = new Uint8Array(hash);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+  return verifier;
+}
+
+export function getKeycloakWorkerIssuerUrl(): string {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_KEYCLOAK_URL?.replace(/\/+$/, '') ||
+    'http://10.179.1.101:8081';
+  const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'hec-admin';
+  return `${baseUrl}/realms/${realm}`;
+}
+
+export async function initiateWorkerKeycloakLogin(options?: {
+  callbackUrl?: string;
+  clientId?: string;
+  redirectUri?: string;
+}): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  const callbackUrl = options?.callbackUrl || '/dashboard';
+  const verifier = generateRandomString(64);
+  const challenge = await generateCodeChallenge(verifier);
+
+  document.cookie = `kc_worker_verifier=${encodeURIComponent(verifier)}; path=/; max-age=600; SameSite=Lax`;
+  try {
+    sessionStorage.setItem('kc_worker_verifier', verifier);
+    sessionStorage.setItem('kc_worker_return_url', callbackUrl);
+  } catch {
+    // ignore
+  }
+
+  const issuerUrl = getKeycloakWorkerIssuerUrl();
+  const clientId =
+    options?.clientId ||
+    process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID ||
+    'hec-worker-portal';
+  const redirectUri =
+    options?.redirectUri || `${window.location.origin}/callback`;
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    scope: 'openid profile email roles',
+    redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state: encodeURIComponent(callbackUrl),
+  });
+
+  window.location.assign(
+    `${issuerUrl}/protocol/openid-connect/auth?${params.toString()}`
+  );
+}
+
+export async function exchangeWorkerCodeForToken(
+  code: string,
+  codeVerifier: string,
+  redirectUri?: string
+): Promise<{ success: boolean; accessToken?: string; error?: string }> {
+  const issuerUrl = getKeycloakWorkerIssuerUrl();
+  const clientId =
+    process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'hec-worker-portal';
+  const finalRedirectUri =
+    redirectUri ||
+    (typeof window !== 'undefined'
+      ? `${window.location.origin}/callback`
+      : 'http://localhost:3002/callback');
+
+  const bodyParams = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: clientId,
+    code,
+    redirect_uri: finalRedirectUri,
+    code_verifier: codeVerifier,
+  });
+
+  try {
+    const res = await fetch(`${issuerUrl}/protocol/openid-connect/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: bodyParams.toString(),
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      return {
+        success: false,
+        error: data.error_description || data.error || 'Token exchange failed',
+      };
+    }
+
+    return {
+      success: true,
+      accessToken: data.access_token,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Network error';
+    return { success: false, error: msg };
+  }
+}
+
+export async function authenticateWorkerWithToken(
+  accessToken: string
+): Promise<WorkerAuthResponse> {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, '') ||
+    'http://127.0.0.1:8000';
+
+  const res = await fetch(`${baseUrl}/api/v1/worker/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      access_token: accessToken,
+    }),
+  });
+
+  const data: WorkerAuthResponse = await res.json();
+  if (data.success && data.data) {
+    setWorkerSession(data.data.user, accessToken);
+  }
+  return data;
 }

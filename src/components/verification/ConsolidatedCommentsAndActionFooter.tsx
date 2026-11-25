@@ -168,6 +168,16 @@ export function ConsolidatedCommentsAndActionFooter({
     degree: 'degree14' | 'degree16',
     key: 'transcript' | 'provisionalCertificate' | 'equivalenceCertificate'
   ) => {
+    if (!isStageActiveForRole) {
+      toast.add({
+        title: 'Editing Locked',
+        description:
+          'You cannot modify document checklist flags while the application is in another stage.',
+        type: 'warning',
+      });
+      return;
+    }
+
     const updated: AttestedDocumentChecklist = {
       ...checklist,
       [degree]: {
@@ -360,9 +370,36 @@ export function ConsolidatedCommentsAndActionFooter({
     }
   };
 
+  // Stage is editable ONLY if the application is currently waiting for THIS specific role
+  const isStageActiveForRole = React.useMemo(() => {
+    if (effectiveRole === 'ROLE_HEC_MANAGER') return true;
+
+    switch (effectiveRole) {
+      case 'ROLE_HEC_SCRUTINY':
+        return ['PENDING_SCRUTINY', 'IN_SCRUTINY'].includes(
+          application.currentState
+        );
+      case 'ROLE_CONTROLLER_L1':
+        return ['PENDING_CONTROLLER_L1', 'IN_CONTROLLER_L1'].includes(
+          application.currentState
+        );
+      case 'ROLE_CONTROLLER_L2':
+        return ['PENDING_CONTROLLER_L2', 'IN_CONTROLLER_L2'].includes(
+          application.currentState
+        );
+      case 'ROLE_HEC_ATTESTATION':
+        return ['PENDING_ATTESTATION', 'IN_ATTESTATION'].includes(
+          application.currentState
+        );
+      default:
+        return false;
+    }
+  }, [effectiveRole, application.currentState]);
+
   // Determine if a remark can be edited by current user
   const canEditRemark = (remark: FieldRemark): boolean => {
     if (effectiveRole === 'ROLE_HEC_MANAGER') return true;
+    if (!isStageActiveForRole) return false;
     if (remark.authorRole === effectiveRole) return true;
     if (
       effectiveRole === 'ROLE_HEC_SCRUTINY' &&
@@ -374,7 +411,7 @@ export function ConsolidatedCommentsAndActionFooter({
         'Degree (14 Year)',
         'Degree (16 Year)',
       ].includes(remark.category) &&
-      application.currentState === 'IN_SCRUTINY'
+      ['PENDING_SCRUTINY', 'IN_SCRUTINY'].includes(application.currentState)
     ) {
       return true;
     }
@@ -1393,14 +1430,16 @@ export function ConsolidatedCommentsAndActionFooter({
             </div>
           </div>
 
-          <Button
-            size="sm"
-            onClick={() => setIsAddModalOpen(true)}
-            className="h-8 shrink-0 gap-1.5 rounded-[8px] bg-[#13c2b6] text-xs font-semibold text-white shadow-2xs hover:bg-[#0fb2a6]"
-          >
-            <Plus className="size-3.5" />
-            <span>+ Add New Remark</span>
-          </Button>
+          {isStageActiveForRole && (
+            <Button
+              size="sm"
+              onClick={() => setIsAddModalOpen(true)}
+              className="h-8 shrink-0 gap-1.5 rounded-[8px] bg-[#13c2b6] text-xs font-semibold text-white shadow-2xs hover:bg-[#0fb2a6]"
+            >
+              <Plus className="size-3.5" />
+              <span>+ Add New Remark</span>
+            </Button>
+          )}
         </CardHeader>
 
         <CardContent className="divide-y divide-[#e5e5e5] p-0">
@@ -1544,180 +1583,258 @@ export function ConsolidatedCommentsAndActionFooter({
           </div>
         </div>
 
-        {/* Dynamic Buttons Based on Effective Role */}
+        {/* Dynamic Buttons Based on Effective Role & Active Stage */}
         <div className="flex flex-wrap items-center justify-end gap-3 pt-1">
-          {/* A. If Role = HEC Scrutiny */}
-          {effectiveRole === 'ROLE_HEC_SCRUTINY' && (
+          {!isStageActiveForRole ? (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-xs font-medium text-amber-900">
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              <span>
+                Stage Completed: This application is currently at phase{' '}
+                <strong>{application.currentState}</strong>. Editing and
+                approval actions are restricted for your role until returned to
+                your queue.
+              </span>
+            </div>
+          ) : (
             <>
-              {/* Button 1: Revision & Send Back to Student */}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'REVISION_REQUESTED',
-                    targetState: 'REVISION_REQUESTED',
-                    title: 'Return Application to Student for Revision',
-                    description:
-                      'Routes application back to Student Portal with all accumulated scrutiny discrepancy remarks attached.',
-                    requiresReason: true,
-                    actionType: 'REVISION',
-                  })
-                }
-                className="h-9 gap-1.5 border-orange-300 bg-white text-xs font-semibold text-orange-800 hover:bg-orange-50"
-              >
-                <RotateCcw className="size-3.5" />
-                <span>Revision & Send Back to Student</span>
-              </Button>
+              {/* A. If Role = HEC Scrutiny */}
+              {effectiveRole === 'ROLE_HEC_SCRUTINY' && (
+                <>
+                  {/* Button 1: Revision & Send Back to Student */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'REVISION_REQUESTED',
+                        targetState: 'REVISION_REQUESTED',
+                        title: 'Return Application to Student for Revision',
+                        description:
+                          'Routes application back to Student Portal with all accumulated scrutiny discrepancy remarks attached.',
+                        requiresReason: true,
+                        actionType: 'REVISION',
+                      })
+                    }
+                    className="h-9 gap-1.5 border-orange-300 bg-white text-xs font-semibold text-orange-800 hover:bg-orange-50"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>Revision & Send Back to Student</span>
+                  </Button>
 
-              {/* Button 2: Reject Application */}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'REJECT_APPLICATION',
-                    targetState: 'REJECTED',
-                    title: 'Formally Reject Application',
-                    description:
-                      'Terminates application workflow. A mandatory formal justification is permanently logged into the national registry.',
-                    isDestructive: true,
-                    requiresReason: true,
-                    actionType: 'REJECT',
-                  })
-                }
-                className="h-9 gap-1.5 border-rose-300 bg-white text-xs font-semibold text-rose-800 hover:bg-rose-50"
-              >
-                <XCircle className="size-3.5" />
-                <span>Reject Application</span>
-              </Button>
+                  {/* Button 2: Reject Application */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'REJECT_APPLICATION',
+                        targetState: 'REJECTED',
+                        title: 'Formally Reject Application',
+                        description:
+                          'Terminates application workflow. A mandatory formal justification is permanently logged into the national registry.',
+                        isDestructive: true,
+                        requiresReason: true,
+                        actionType: 'REJECT',
+                      })
+                    }
+                    className="h-9 gap-1.5 border-rose-300 bg-white text-xs font-semibold text-rose-800 hover:bg-rose-50"
+                  >
+                    <XCircle className="size-3.5" />
+                    <span>Reject Application</span>
+                  </Button>
 
-              {/* Button 3: Approve & Forward to Controller L1 */}
-              <Button
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'APPROVE_AND_FORWARD_L1',
-                    targetState: 'PENDING_CONTROLLER_L1',
-                    title:
-                      'Approve Scrutiny & Forward to University Controller (L1)',
-                    description:
-                      'Marks screening complete and dispatches candidate dossier to University Examination Gazette verification queue.',
-                    actionType: 'PASS',
-                  })
-                }
-                className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
-              >
-                <CheckCircle2 className="size-3.5" />
-                <span>Approve & Forward to Controller L1</span>
-              </Button>
-            </>
-          )}
+                  {/* Button 3: Approve & Forward to Controller L1 */}
+                  <Button
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'APPROVE_AND_FORWARD_L1',
+                        targetState: 'PENDING_CONTROLLER_L1',
+                        title:
+                          'Approve Scrutiny & Forward to University Controller (L1)',
+                        description:
+                          'Marks screening complete and dispatches candidate dossier to University Examination Gazette verification queue.',
+                        actionType: 'PASS',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
+                  >
+                    <CheckCircle2 className="size-3.5" />
+                    <span>Approve & Forward to Controller L1</span>
+                  </Button>
+                </>
+              )}
 
-          {/* B. If Role = University Controller L1 */}
-          {effectiveRole === 'ROLE_CONTROLLER_L1' && (
-            <>
-              {/* Button 1: Flag Academic Discrepancy & Forward to Controller L2 (Reject) */}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'FLAG_DISCREPANCY_FORWARD_L2',
-                    targetState: 'PENDING_CONTROLLER_L2',
-                    title:
-                      'Flag Academic Discrepancy & Forward to Controller L2 (Reject)',
-                    description:
-                      'L1 notes discrepancies against gazette records. Case routes to Controller L2 for final institutional verdict.',
-                    requiresReason: true,
-                    actionType: 'REJECT',
-                  })
-                }
-                className="h-9 gap-1.5 rounded-[10px] border-[#fcbb00]/50 bg-white text-xs font-semibold text-[#f05100] hover:bg-[#fcbb00]/10"
-              >
-                <AlertTriangle className="size-3.5" />
-                <span>
-                  Flag Academic Discrepancy & Forward to Controller L2 (Reject)
-                </span>
-              </Button>
+              {/* B. If Role = University Controller L1 */}
+              {effectiveRole === 'ROLE_CONTROLLER_L1' && (
+                <>
+                  {/* Button 1: Return to Scrutiny Desk */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'RETURN_TO_SCRUTINY',
+                        targetState: 'PENDING_SCRUTINY',
+                        title: 'Return Case to Scrutiny Desk',
+                        description:
+                          'Routes case back to Scrutiny Officer for missing documentation or re-verification.',
+                        requiresReason: true,
+                        actionType: 'REVISION',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] border-[#e5e5e5] bg-white text-xs font-semibold text-[#000000] hover:bg-[#f8fafc]"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>Return to Scrutiny</span>
+                  </Button>
 
-              {/* Button 2: Verify & Forward to Controller L2 (Pass) */}
-              <Button
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'VERIFY_AND_FORWARD_L2',
-                    targetState: 'PENDING_CONTROLLER_L2',
-                    title: 'Verify & Forward to Controller L2 (Pass)',
-                    description:
-                      'Academic transcript matches official university gazette. Dispatches to Controller of Examinations for final institutional endorsement.',
-                    actionType: 'PASS',
-                  })
-                }
-                className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
-              >
-                <CheckCircle2 className="size-3.5" />
-                <span>Verify & Forward to Controller L2 (Pass)</span>
-              </Button>
-            </>
-          )}
+                  {/* Button 2: Flag Academic Discrepancy & Forward to Controller L2 (Reject) */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'FLAG_DISCREPANCY_FORWARD_L2',
+                        targetState: 'PENDING_CONTROLLER_L2',
+                        title:
+                          'Flag Academic Discrepancy & Forward to Controller L2 (Reject)',
+                        description:
+                          'L1 notes discrepancies against gazette records. Case routes to Controller L2 for final institutional verdict.',
+                        requiresReason: true,
+                        actionType: 'REJECT',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] border-[#fcbb00]/50 bg-white text-xs font-semibold text-[#f05100] hover:bg-[#fcbb00]/10"
+                  >
+                    <AlertTriangle className="size-3.5" />
+                    <span>
+                      Flag Academic Discrepancy & Forward to Controller L2
+                    </span>
+                  </Button>
 
-          {/* C. If Role = University Controller L2 */}
-          {effectiveRole === 'ROLE_CONTROLLER_L2' && (
-            <Button
-              onClick={() =>
-                setPendingTransition({
-                  action: 'SUBMIT_FINAL_UNIVERSITY_REMARKS',
-                  targetState: 'PENDING_ATTESTATION',
-                  title: 'Submit Final University Remarks & Return to HEC',
-                  description:
-                    'Applies university controller signature sign-off and dispatches verified case back to HEC Attestation Section with L1 + L2 academic verification.',
-                  actionType: 'PASS',
-                })
-              }
-              className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
-            >
-              <CheckCircle2 className="size-3.5" />
-              <span>Submit Final University Remarks & Return to HEC</span>
-            </Button>
-          )}
+                  {/* Button 3: Verify & Forward to Controller L2 (Pass) */}
+                  <Button
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'VERIFY_AND_FORWARD_L2',
+                        targetState: 'PENDING_CONTROLLER_L2',
+                        title: 'Verify & Forward to Controller L2 (Pass)',
+                        description:
+                          'Academic transcript matches official university gazette. Dispatches to Controller of Examinations for final institutional endorsement.',
+                        actionType: 'PASS',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
+                  >
+                    <CheckCircle2 className="size-3.5" />
+                    <span>Verify & Forward to Controller L2 (Pass)</span>
+                  </Button>
+                </>
+              )}
 
-          {/* D. If Role = HEC Attestation or HEC Manager */}
-          {(effectiveRole === 'ROLE_HEC_ATTESTATION' ||
-            effectiveRole === 'ROLE_HEC_MANAGER') && (
-            <>
-              {/* Button 1: Return to Scrutiny / Revision */}
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'RETURN_TO_SCRUTINY',
-                    targetState: 'REVISION_REQUESTED',
-                    title: 'Return Case to Scrutiny / Revision',
-                    description:
-                      'Routes case back to initial scrutiny queue for missing documentation or unresolved equivalency requirements.',
-                    requiresReason: true,
-                    actionType: 'REVISION',
-                  })
-                }
-                className="h-9 gap-1.5 rounded-[10px] border-[#e5e5e5] bg-white text-xs font-semibold text-[#000000] hover:bg-[#f8fafc]"
-              >
-                <RotateCcw className="size-3.5" />
-                <span>Return to Scrutiny / Revision</span>
-              </Button>
+              {/* C. If Role = University Controller L2 */}
+              {effectiveRole === 'ROLE_CONTROLLER_L2' && (
+                <>
+                  {/* Button 1: Return to Controller L1 */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'RETURN_TO_CONTROLLER_L1',
+                        targetState: 'PENDING_CONTROLLER_L1',
+                        title: 'Return Case to University Controller L1',
+                        description:
+                          'Routes case back to Controller L1 for re-examination of university gazette records.',
+                        requiresReason: true,
+                        actionType: 'REVISION',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] border-[#e5e5e5] bg-white text-xs font-semibold text-[#000000] hover:bg-[#f8fafc]"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>Return to Controller L1</span>
+                  </Button>
 
-              {/* Button 2: Final Approve & Issue Attestation */}
-              <Button
-                onClick={() =>
-                  setPendingTransition({
-                    action: 'FINAL_APPROVE_AND_ISSUE',
-                    targetState: 'ATTESTED_COMPLETED',
-                    title: 'Final Approve & Issue Official HEC Attestation',
-                    description:
-                      'Concludes workflow, marks case COMPLETED, generates permanent HEC Attestation Registration Number, and produces official verification ticket.',
-                    actionType: 'FINAL_ISSUE',
-                  })
-                }
-                className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
-              >
-                <FileBadge className="size-3.5" />
-                <span>Final Approve & Issue Attestation</span>
-              </Button>
+                  {/* Button 2: Return to Scrutiny */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'RETURN_TO_SCRUTINY',
+                        targetState: 'PENDING_SCRUTINY',
+                        title: 'Return Case to Scrutiny Desk',
+                        description:
+                          'Routes case directly back to Scrutiny Officer for candidate document revisions.',
+                        requiresReason: true,
+                        actionType: 'REVISION',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] border-orange-300 bg-white text-xs font-semibold text-orange-800 hover:bg-orange-50"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>Return to Scrutiny</span>
+                  </Button>
+
+                  {/* Button 3: Submit Final University Remarks & Return to HEC */}
+                  <Button
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'SUBMIT_FINAL_UNIVERSITY_REMARKS',
+                        targetState: 'PENDING_ATTESTATION',
+                        title:
+                          'Submit Final University Remarks & Return to HEC',
+                        description:
+                          'Applies university controller signature sign-off and dispatches verified case back to HEC Attestation Section with L1 + L2 academic verification.',
+                        actionType: 'PASS',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
+                  >
+                    <CheckCircle2 className="size-3.5" />
+                    <span>Submit Final University Remarks & Return to HEC</span>
+                  </Button>
+                </>
+              )}
+
+              {/* D. If Role = HEC Attestation or HEC Manager */}
+              {(effectiveRole === 'ROLE_HEC_ATTESTATION' ||
+                effectiveRole === 'ROLE_HEC_MANAGER') && (
+                <>
+                  {/* Button 1: Return to Scrutiny / Revision */}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'RETURN_TO_SCRUTINY',
+                        targetState: 'PENDING_SCRUTINY',
+                        title: 'Return Case to Scrutiny / Revision',
+                        description:
+                          'Routes case back to initial scrutiny queue for missing documentation or unresolved equivalency requirements.',
+                        requiresReason: true,
+                        actionType: 'REVISION',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] border-[#e5e5e5] bg-white text-xs font-semibold text-[#000000] hover:bg-[#f8fafc]"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>Return to Scrutiny / Revision</span>
+                  </Button>
+
+                  {/* Button 2: Final Approve & Issue Attestation */}
+                  <Button
+                    onClick={() =>
+                      setPendingTransition({
+                        action: 'FINAL_APPROVE_AND_ISSUE',
+                        targetState: 'ATTESTED_COMPLETED',
+                        title: 'Final Approve & Issue Official HEC Attestation',
+                        description:
+                          'Concludes workflow, marks case COMPLETED, generates permanent HEC Attestation Registration Number, and produces official verification ticket.',
+                        actionType: 'FINAL_ISSUE',
+                      })
+                    }
+                    className="h-9 gap-1.5 rounded-[10px] bg-[#13c2b6] text-xs font-semibold text-white shadow-xs hover:bg-[#0fb2a6]"
+                  >
+                    <FileBadge className="size-3.5" />
+                    <span>Final Approve & Issue Attestation</span>
+                  </Button>
+                </>
+              )}
             </>
           )}
         </div>

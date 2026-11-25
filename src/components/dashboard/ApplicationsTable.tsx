@@ -293,6 +293,16 @@ export function ApplicationsTable({
                       <div className="max-w-[200px] truncate text-[10px] text-slate-400">
                         {targetDegree?.institutionName}
                       </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-[10px]">
+                        <span className="font-semibold text-slate-500">
+                          Officer:
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-medium ${app.assignedUserName && !app.assignedUserName.includes('Unassigned') ? 'border border-emerald-200 bg-emerald-50 text-emerald-800' : 'border border-amber-200 bg-amber-50 text-amber-800'}`}
+                        >
+                          {app.assignedUserName || 'Unassigned Queue'}
+                        </span>
+                      </div>
                     </td>
 
                     {/* Passing Year */}
